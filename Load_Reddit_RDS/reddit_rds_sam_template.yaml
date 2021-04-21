@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sample SAM Template for Loading Reddit Posts to DWH'
+Globals:
+    Function:
+        Timeout: 900
+Resources:
+  RedditRdsLambdaFn:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: load_reddit_rds.LoadRedditRds
+      Runtime: python3.7
+      CodeUri: Reddit_rds/
+      Description: 'Lambda function for loading reddit posts to dwh'
+      MemorySize: 2500
+      Timeout: 900
+      Role: 'arn:aws:iam::599400675571:role/Reddit-Lambda-role'
+      Layers: 
+          - !Ref LambdaLayerLibRedditRds
+          - !Ref LambdaLayerLibRedditRdsPycopg
+      Environment:
+        Variables:
+          DATABASE: 'pelago_reddit_db'
+          SCHEMA: 'reddit'
+          TABLE: 'tbl_reddit_hot_posts'
+          BUCKET: 'pelago-reddit'
+          FOLDER: 'reddit'
+          PRIMARY_KEY: "['post_id','current_dt','current_hr']"
+          BUCKET_TOKEN: 'pelago-key'
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-0feeb12e9aab07b20
+        SubnetIds:
+          - subnet-0d75e2b2f57a7c7ac
+          - subnet-0a515b46e06c34244
+  LambdaLayerLibRedditRds:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+        LayerName: lambda-layer-library-reddit-rds
+        Description: 'Lambda Layer to hold the python dependant libraries'
+        ContentUri: lambda-layer-library-reddit-rds/lambda-layer-library-reddit-rds.zip
+        CompatibleRuntimes:
+            - python3.7
+        LicenseInfo: MIT
+        RetentionPolicy: Delete
+  LambdaLayerLibRedditRdsPycopg:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+        LayerName: lambda-layer-library-reddit-rds-pycopg2
+        Description: 'Lambda Layer to hold the python dependant libraries'
+        ContentUri: lambda-layer-library-reddit-rds-pycopg2/lambda-layer-library-reddit-rds-pycopg2.zip
+        CompatibleRuntimes:
+            - python3.7
+        LicenseInfo: MIT
+        RetentionPolicy: Delete
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Protocol: email
+        Endpoint: 'nandhinisoundar@gmail.com'
+  RedditRdsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: RedditRdsLambdaFn
+    Properties: 
+      AlarmActions:
+        - !Ref AlarmTopic
+      AlarmName: !Sub alarm-reddit-rds-error-${RedditRdsLambdaFn}
+      AlarmDescription: "Alarm if there is any errors in loading of reddit posts data to rds"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RedditRdsLambdaFn
+      EvaluationPeriods: 1
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
+
+
