@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Sample SAM Template for Extraction of Reddit data to S3'
+Globals:
+    Function:
+        Timeout: 900
+
+Resources:
+  RedditLambdaFn:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: extract_reddit_s3.ExtractTopRedditPostsToS3
+      Runtime: python3.7
+      CodeUri: Reddit_s3/
+      Description: 'Lambda function for extraction of Reddit data to S3 bucket'
+      MemorySize: 2500
+      Timeout: 900
+      Role: 'arn:aws:iam::599400675571:role/Reddit-Lambda-role'
+      Layers: 
+          - !Ref LambdaLayerLibraryReddit
+      Events:
+        ExtractReddit:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 * ? * * *)
+      Environment:
+        Variables:
+          REDDIT_TOPIC: 'covid'
+          REDDIT_BUCKET: 'pelago-reddit'
+          FILE_FORMAT: 'csv'
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-0feeb12e9aab07b20
+        SubnetIds:
+          - subnet-0d75e2b2f57a7c7ac
+          - subnet-0a515b46e06c34244
+  LambdaLayerLibraryReddit:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+        LayerName: lambda-layer-library-reddit
+        Description: 'Lambda Layer to hold the python dependant libraries'
+        ContentUri: lambda-layer-library-reddit/lambda-layer-library-reddit.zip
+        CompatibleRuntimes:
+            - python3.7
+        LicenseInfo: MIT
+        RetentionPolicy: Delete
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Protocol: email
+        Endpoint: 'nandhinisoundar@gmail.com'
+  RedditMetricGreaterThanZeroAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: RedditLambdaFn
+    Properties: 
+      AlarmActions:
+        - !Ref AlarmTopic
+      AlarmName: !Sub alarm-reddit-error-${RedditLambdaFn}
+      AlarmDescription: "Alarm if there is any errors in extraction of reddit lambda function"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RedditLambdaFn
+      EvaluationPeriods: 1
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
